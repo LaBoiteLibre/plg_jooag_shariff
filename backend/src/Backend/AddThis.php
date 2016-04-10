@@ -3,15 +3,12 @@
 namespace Heise\Shariff\Backend;
 
 /**
- * Class AddThis
- *
- * @package Heise\Shariff\Backend
+ * Class AddThis.
  */
 class AddThis extends Request implements ServiceInterface
 {
-
     /**
-     * @return string
+     * {@inheritdoc}
      */
     public function getName()
     {
@@ -19,21 +16,21 @@ class AddThis extends Request implements ServiceInterface
     }
 
     /**
-     * @param string $url
-     * @return \GuzzleHttp\Message\Request|\GuzzleHttp\Message\RequestInterface
+     * {@inheritdoc}
      */
     public function getRequest($url)
     {
-        $url = 'http://api-public.addthis.com/url/shares.json?url='.urlencode($url);
-        return $this->createRequest($url);
+        return new \GuzzleHttp\Psr7\Request(
+            'GET',
+            'http://api-public.addthis.com/url/shares.json?url='.urlencode($url)
+        );
     }
 
     /**
-     * @param array $data
-     * @return int
+     * {@inheritdoc}
      */
     public function extractCount(array $data)
     {
-        return $data['shares'];
+        return isset($data['shares']) ? $data['shares'] : 0;
     }
 }

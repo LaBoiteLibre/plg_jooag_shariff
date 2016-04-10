@@ -6,6 +6,11 @@
  * @copyright  Copyright (c) 2009 - 2015 Joomla-Agentur All rights reserved.
  * @license    GNU General Public License version 2 or later;
  * @description A small Plugin to share Social Links without compromising their privacy!
+ * # JoomlaEvents
+ * ## Plugin Access
+ * ### Output Position
+ * #### Output Generation
+ * ##### Backend
  **/
 defined('_JEXEC') or die;
 
@@ -15,7 +20,13 @@ defined('_JEXEC') or die;
  * @since  1.0.0
  **/
 class plgSystemJooag_Shariff extends JPlugin
-{
+{	
+	public function __construct(& $subject, $config)
+	{
+		parent::__construct($subject, $config);
+		$this->loadLanguage();
+	}
+	
 	/**
 	 * Display the buttons before the article
 	 *
@@ -27,17 +38,16 @@ class plgSystemJooag_Shariff extends JPlugin
 	 * @return  string
 	 **/
 	public function onContentBeforeDisplay($context, &$article, &$params, $page = 0)
-	{		
-		$app = JFactory::getApplication();
-
-		if($context == 'com_content.article' and $this->params->get('position') == 1 and $app->isSite())
+	{
+		if($this->getAccessGeneral($context, $article, 'top') == 1)
 		{
-			$article->introtext = str_replace('{noshariff}', '', $article->introtext, $stringCount);
-	
+			$article->introtext = str_replace('{noshariff}', '', $article->introtext, $stringCount); //Fix for Newsflash Module
+			
 			if($stringCount == 0)
 			{
-				return $this->getOutputPosition($article, $config = array());
+				return $this->generateHTML($config = array());
 			}
+			
 		}
 	}
 
@@ -52,28 +62,53 @@ class plgSystemJooag_Shariff extends JPlugin
 	 * @return  string
 	 **/
 	public function onContentAfterDisplay($context, &$article, &$params, $page = 0)
-	{
-		$app = JFactory::getApplication();
-			
-		if($context == 'com_content.article' and $this->params->get('position') == 2 and $app->isSite())
+	{			
+		if($this->getAccessGeneral($context, $article, 'bottom') == 1)
 		{
-			$article->introtext = str_replace('{noshariff}', '', $article->introtext, $stringCount);
+			$article->introtext = str_replace('{noshariff}', '', $article->introtext, $stringCount); //Fix for Newsflash Module
 			
 			if($stringCount == 0)
 			{
-				return $this->getOutputPosition($article, $config = array());
+				return $this->generateHTML($config = array());
 			}
 		}
 	}
 
+	//Show Everywhere
+	public function onBeforeRender()
+	{
+		$app = JFactory::getApplication();
+		
+		if($app->isSite())
+		{
+			$doc = JFactory::getDocument();
+			$buffer = $doc->getBuffer('component');
+			$buffering = '';
+			
+			if($this->getAccessGeneral('com_everywhere', '', 'top') == 1)
+			{
+				$buffering .= $this->generateHTML($config = array());
+			}
+			
+			$buffering .= $buffer;
+			
+			if($this->getAccessGeneral('com_everywhere', '', 'bottom') == 1)
+			{
+				$buffering .= $this->generateHTML($config = array());
+			}
+
+			$doc->setBuffer($buffering, 'component');
+		}
+	}
+	
 	/**
 	 * Place shariff in your aticles and modules via {shariff} shorttag
 	 **/
 	public function onContentPrepare($context, &$article, &$params, $page = 0)
-	{
+	{		
 		$app = JFactory::getApplication();
 		
-		if($context == 'mod_custom.content' and preg_match_all('/{shariff\ ([^}]+)\}|\{shariff\}/', $article->text, $matches) and $app->isSite())
+		if(preg_match_all('/{shariff\ ([^}]+)\}|\{shariff\}/', $article->text, $matches) and $app->isSite() and $this->getAccessGeneral('com_shorttag', $article, 'top') == 1)
 		{
 			$params = explode(' ', trim($matches[0][0],'}'));
 			$config = array ();
@@ -86,102 +121,185 @@ class plgSystemJooag_Shariff extends JPlugin
 					$config[ $k ] = $v;
 				}
 			}
-
-			$article->text = str_replace($matches[0][0], $this->getOutputPosition($article, $config), $article->text);
+			
+			$this->params->get('com_shorttag') ? $config['shorttag'] = 1 : $config['shorttag'] = 0;
+			$article->text = str_replace($matches[0][0], $this->generateHTML($config), $article->text);
 		}
-		
-		if	($context == 'mod_articles_news.content' and ($this->params->get('position') == 1 or $this->params->get('position') == 2)){
+
+		//Fix for Newsflash Module
+		if	($context == 'mod_articles_news.content')
+		{ 
 			$article->text .= '{noshariff}';
 		}
 	}
-
-	/**
-	 * appends the required scripts to the documents and returns the markup
-	 *
-	 * @param   mixed    &$article  An object with a "text" property
-	 *
-	 * @return string
-	 **/
-	public function getOutputPosition($article, $config)
+	
+	//###############Access::Section->START
+	private function getAccessGeneral($context, $article, $position)
 	{
-		$catIds = (array)$this->params->get('showbycategory');
-		$menuIds = (array)$this->params->get('showbymenu');
+		$app = JFactory::getApplication();
+		$access = 0;
+		
+		if(in_array($position, $this->params->get('output_position')) and $app->isSite())
+		{
+			//For Com_content Articles
+			if($this->getAccessComContent($context ,$article) == 1 and $this->getAccessMenu($context) == 1)
+			{
+				$access = 1;
+			}
+
+			//For getbuffer('component') aka com_everywhere
+			if($this->params->get('com_everywhere') == 1 and $context == 'com_everywhere' and $this->getAccessMenu('com_everywhere.placeholder') == 1)
+			{
+				$access = 1;
+			}
+		}
+		
+		if($this->params->get('com_shorttag') == 1 and $context == 'com_shorttag' and $app->isSite())
+		{
+			$access = 1;
+		}
+		
+		return $access;
+	}
+	
+	private function getAccessMenu($context)
+	{
+		$menuAccess = 0;
 		$app = JFactory::getApplication();
 		$menu = $app->getMenu()->getActive();
+		is_object($menu) ? $actualMenuId = $menu->id : $actualMenuId = $app->input->getInt('Itemid', 0);
+		$context = explode('.', $context);
+		$menuIds = (array)$this->params->get($context[0].'_menu_select');
+		$this->params->get($context[0].'_menu_assignment') == 0 ? $menuAccess = 0 : '';
+		$this->params->get($context[0].'_menu_assignment') == 1 ? $menuAccess = 1 : '';
 		
-		if (is_object($menu))
+		if($this->params->get($context[0].'_menu_assignment') == 2)
 		{
-		  $actualMenuId = $menu->id;
+			$menuAccess = 0;
+			in_array($actualMenuId, $menuIds) ? $menuAccess = 1 : '';
 		}
-		else
+		
+		if($this->params->get($context[0].'_menu_assignment') == 3)
 		{
-		  $actualMenuId = $app->input->getInt('Itemid', 0);
+			$menuAccess = 1;
+			in_array($actualMenuId, $menuIds) ? $menuAccess = 0 : '';
 		}
-
-		$view = 0;
-
-		if($this->params->get('wheretoshow') == 3){
-			$view = 1;
-		}
-
-		if ((isset($article->catid) and in_array($article->catid, $catIds)) or in_array($actualMenuId, $menuIds))
-		{
-			if($this->params->get('wheretoshow') == 2){
-				$view = 1;
-			}
-
-			if($this->params->get('wheretoshow') == 3){
-				$view = 0;
-			}
-		}
-
-		if($view == 1 or $this->params->get('wheretoshow') == 1){
-			return $this->getOutput($config);
-		}
+		
+		return $menuAccess;
 	}
+	
+	private function getAccessComContent($context, $article)
+	{
+		$access = 0;
 
+		if($this->params->get('com_content') == 1 and $context == 'com_content.article')
+		{
+			$catIds = (array)$this->params->get('com_content_category_select');
+			$this->params->get('com_content_category_assignment') == 0 ? $access = 0 : '';
+			$this->params->get('com_content_category_assignment') == 1 ? $access = 1 : '';
+			
+			if($this->params->get('com_content_category_assignment') == 2)
+			{
+				$access = 0;
+				isset($article->catid) and in_array($article->catid, $catIds) ? $access = 1 : '';
+			}
+
+			if($this->params->get('com_content_category_assignment') == 3)
+			{
+				$access = 1;
+				isset($article->catid) and in_array($article->catid, $catIds) ? $access = 0 : '';
+			}
+		}
+
+		return $access;
+	}
+	//###############Access::Section->END
+	
 	/**
 	 * Shariff output generation
 	 **/
-	public function getOutput($config)
+	public function generateHTML($config) //for shorttag
 	{
-		$doc = JFactory::getDocument();
-		JHtml::_('jquery.framework');
-		$doc->addStyleSheet(JURI::root().'media/plg_jooag_shariff/css/'.$this->params->get('shariffcss'));
-		$doc->addScript(JURI::root().'media/plg_jooag_shariff/js/'.$this->params->get('shariffjs'));
-		$doc->addScriptDeclaration('jQuery(document).ready(function() {var buttonsContainer = jQuery(".shariff");new Shariff(buttonsContainer);});');
 
-		//Cache Folder
-		jimport('joomla.filesystem.folder');
-		if(!JFolder::exists(JPATH_SITE.'/cache/plg_jooag_shariff') and $this->params->get('data_backend_url')){
-			JFolder::create(JPATH_SITE.'/cache/plg_jooag_shariff', 0755);
-		}
+		//Services
+		$services = array('twitter','facebook','googleplus','linkedin','pinterest','xing','whatsapp','mail','info','addthis','tumblr','flattr','diaspora','reddit','stumbleupon','threema');
 		
-		$html  = '<div class="shariff"';
-		$html .= ($this->params->get('data_backend_url')) ? ' data-backend-url="/plugins/system/jooag_shariff/backend/"' : '';
-		$html .= ' data-lang="'.explode("-", JFactory::getLanguage()->getTag())[0].'"';
-		$html .= ($this->params->get('data_mail_url')) ? ' data-mail-url="mailto:'.$this->params->get('data_mail_url').'"' : '';
-		$html .= (array_key_exists('orientation', $config)) ? ' data-orientation="'.$config['orientation'].'"' : ' data-orientation="'.$this->params->get('data_orientation').'"';
-		$html .= ' data-services="'.htmlspecialchars(json_encode(array_map('strtolower', (array)json_decode($this->params->get('data_services'))->services))).'"';
-		$html .= (array_key_exists('theme', $config)) ? ' data-theme="'.$config['theme'].'"' : ' data-theme="'.$this->params->get('data_theme').'"';
-		$html .= ' data-url="'.JURI::getInstance()->toString().'"';
-		
-		if (($id = (int)$this->params->get('data_info_url')))
+		foreach ($services as $service)
 		{
-			jimport('joomla.database.table');
-			$item =	JTable::getInstance("content");
-			$item->load($this->params->get('data_info_url'));
-			require_once JPATH_SITE . '/components/com_content/helpers/route.php';
-			$link = JRoute::_(ContentHelperRoute::getArticleRoute($item->id, $item->catid, $item->language));
-			$html .= ' data-info-url="'.$link.'"';
+			$this->params->get($service) ? $activeServices[$service][] = $this->params->get($service.'_ordering') : '';
 		}
 		
-		$html .= '></div>';
-		return $html;
-	}
+		if(isset($activeServices))
+		{			
+			JHtml::_('jquery.framework');
+			$doc = JFactory::getDocument();
+			$doc->addStyleSheet(JURI::root().'media/plg_jooag_shariff/css/'.$this->params->get('shariffcss'));
+			$doc->addScript(JURI::root().'media/plg_jooag_shariff/js/'.$this->params->get('shariffjs'));
+			$doc->addScriptDeclaration('jQuery(document).ready(function() {var buttonsContainer = jQuery(".shariff");new Shariff(buttonsContainer);});');
 
+			//Cache Folder
+			jimport('joomla.filesystem.folder');
+			if(!JFolder::exists(JPATH_SITE.'/cache/plg_jooag_shariff') and $this->params->get('data_backend_url')){
+				JFolder::create(JPATH_SITE.'/cache/plg_jooag_shariff', 0755);
+			}
+					
+			$html  = '<div class="shariff"';
+			$html .= ($this->params->get('data_backend_url')) ? ' data-backend-url="/plugins/system/jooag_shariff/backend/"' : '';
+			$html .= ' data-lang="'.explode("-", JFactory::getLanguage()->getTag())[0].'"';
+			$html .= (array_key_exists('orientation', $config)) ? ' data-orientation="'.$config['orientation'].'"' : ' data-orientation="'.$this->params->get('data_orientation').'"';
+			$html .= (array_key_exists('theme', $config)) ? ' data-theme="'.$config['theme'].'"' : ' data-theme="'.$this->params->get('data_theme').'"';		
+		
+			array_multisort($activeServices);
+			
+			foreach($activeServices as $key => $activeService)
+			{
+				$orderedServices[] = $key;
+			}
+						
+			//Services output
+			$html .= ' data-services="'.htmlspecialchars(json_encode((array)$orderedServices)).'"';	
+	
+			//Twitter
+			if($this->params->get('shariff_twitter'))
+			{
+				$html .= ($this->params->get('shariff_twitter_via')) ? ' data-twitter-via="'.$this->params->get('shariff_twitter_via').'"' : '';
+			}
+			//Flattr
+			if($this->params->get('shariff_flattr'))
+			{	
+				$html .= ($this->params->get('shariff_flattr_category')) ? ' data-flattr-category="'.$this->params->get('shariff_flattr_category').'"' : '';
+				$html .= ($this->params->get('shariff_flattr_user')) ? ' data-flattr-user="'.$this->params->get('shariff_flattr_user').'"' : '';
+			} 
+			
+			//Mail
+			if($this->params->get('shariff_mail'))
+			{
+				$html .= ($this->params->get('data_mail_url')) ? ' data-mail-url="mailto:'.$this->params->get('data_mail_url').'"' : '';
+				$html .= ($this->params->get('data-mail-subject')) ? ' data-mail-subject="'.$this->params->get('data-mail-subject').'"' : '';
+				$html .= ($this->params->get('data-mail-body')) ? ' data-mail-body="'.$this->params->get('data-mail-body').'"' : '';
+			}
+			//Info
+			if($this->params->get('shariff_info'))
+			{
+				if ((int)$this->params->get('data_info_url'))
+				{
+					jimport('joomla.database.table');
+					$item =	JTable::getInstance("content");
+					$item->load($this->params->get('data_info_url'));
+					require_once JPATH_SITE . '/components/com_content/helpers/route.php';
+					$link = JRoute::_(ContentHelperRoute::getArticleRoute($item->id, $item->catid, $item->language));
+					$html .= ' data-info-url="'.$link.'"';
+				}
+			}
+			
+			$html .= '></div>';
+					
+			return $html;
+		}
+	}
+	
 	/**
-	 * Generator for shariff.json if the is saved
+	 * Generator for shariff.json File
 	 *
 	 * @return void
 	 **/
@@ -190,9 +308,20 @@ class plgSystemJooag_Shariff extends JPlugin
 		if($table->name == 'PLG_JOOAG_SHARIFF')
 		{
 			$params = json_decode($table->params);
-			$data->domain = JURI::getInstance()->getHost();
-			$data->services = array_diff(json_decode($params->data_services)->services, array('AddThis','Whatsapp','Mail','Info','Tumblr','Flattr','Diaspora'));
+			
+			if($this->params->get('data_url') == 0){$data->domains = JURI::getInstance()->getHost();}
+			if($this->params->get('data_url') == 1){$data->domains = $this->params->get('data_url_custom');}
 
+			$services = array('googleplus','facebook','linkedin','reddit','stumbleupon','flattr','pinterest','xing','addthis');
+			
+			foreach($services as $service)
+			{
+				$data->services[] = $this->params->get($service);
+			}
+			
+			//Delete unused services
+			$data->services = array_diff($data->services, array('0'));
+			
 			if($params->fb_app_id and $params->fb_secret)
 			{
 				$data->Facebook->app_id = $params->fb_app_id;
@@ -201,8 +330,9 @@ class plgSystemJooag_Shariff extends JPlugin
 
 			$data->cache->cacheDir = JPATH_SITE.'/cache/plg_jooag_shariff';
 			$data->cache->ttl = $params->cache_time;
-
-			if($params->cache == 1)
+			$data->client->timeout = $params->client_timeout;
+			
+			if($params->cache)
 			{
 				$data->cache->adapter = $params->cache_handler;
 
@@ -211,7 +341,7 @@ class plgSystemJooag_Shariff extends JPlugin
 				}
 			}
 
-			$data = json_encode($data, JSON_UNESCAPED_SLASHES);
+			$data = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
 			JFile::write(JPATH_PLUGINS . '/system/jooag_shariff/backend/shariff.json', $data);
 		}
 	}
